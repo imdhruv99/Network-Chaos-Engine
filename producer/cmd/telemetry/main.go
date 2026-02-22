@@ -81,7 +81,6 @@ func main() {
 	close(quit) // Signal all goroutines to stop
 	wg.Wait()   // Wait for all goroutines to finish
 	slog.Info("Graceful shutdown complete.")
-	slog.Info("Total events produced", "count", eventsProduced)
 }
 
 // worker simulates normal traffic by generating packets at a consistent rate defined by delay
