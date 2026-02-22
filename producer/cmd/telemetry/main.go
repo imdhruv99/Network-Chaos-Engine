@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -14,6 +14,7 @@ import (
 	"github.com/imdhruv99/Network-Chaos-Engine/producer/internal/config"
 	"github.com/imdhruv99/Network-Chaos-Engine/producer/internal/generator"
 	"github.com/imdhruv99/Network-Chaos-Engine/producer/internal/kafka"
+	"github.com/imdhruv99/Network-Chaos-Engine/producer/internal/logger"
 	"github.com/imdhruv99/Network-Chaos-Engine/producer/internal/models"
 )
 
@@ -22,15 +23,26 @@ var (
 )
 
 func main() {
+
+	logFile, err := logger.Init()
+	if err != nil {
+		// Fallback to standard error if logger fails to boot
+		os.Stderr.WriteString("Critical failure initializing logger: " + err.Error() + "\n")
+		os.Exit(1)
+	}
+	defer logFile.Close()
+
+	slog.Info("Starting Telemetry Engine initialization")
+
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		fmt.Printf("Error loading config: %v\n", err)
+		slog.Error("Failed to load config", "error", err)
 		return
 	}
 
 	producer, err := kafka.NewProducer(cfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize Kafka producer: %v", err)
+		slog.Error("Failed to initialize Kafka producer", "error", err)
 	}
 	defer producer.Close() // Ensure producer is closed on exit
 
@@ -41,7 +53,10 @@ func main() {
 	var wg sync.WaitGroup       // WaitGroup to wait for all producer goroutines to finish
 	quit := make(chan struct{}) // Channel to signal goroutines to stop
 
-	log.Printf("Starting Chaos Engine with %d workers targeting %d EPS...\n", cfg.WorkerCount, cfg.EPSTarget)
+	slog.Info("Chaos Engine configured",
+		"workers", cfg.WorkerCount,
+		"target_eps", cfg.EPSTarget,
+		"chaos_mode", cfg.ChaosMode)
 
 	// Calculate how mucj delay each worker needs to hit the exact EPS target
 	epsPerWorker := float64(cfg.EPSTarget) / float64(cfg.WorkerCount)
@@ -62,11 +77,11 @@ func main() {
 	go monitorEPS(quit)
 
 	<-sigChan // Wait for shutdown signal
-	log.Println("\n Shutdown signal received. Flushing to kafka and exiting...")
+	slog.Info("Shutdown signal received. Flushing to Kafka and exiting...")
 	close(quit) // Signal all goroutines to stop
 	wg.Wait()   // Wait for all goroutines to finish
-	log.Println("Graceful Shutdown complete.")
-	log.Printf("Total events produced: %d\n", eventsProduced)
+	slog.Info("Graceful shutdown complete.")
+	slog.Info("Total events produced", "count", eventsProduced)
 }
 
 // worker simulates normal traffic by generating packets at a consistent rate defined by delay
@@ -86,7 +101,7 @@ func worker(id int, cfg *config.Config, producer *kafka.TelemetryProducer, delay
 			packet := generator.GeneratePacket(cfg, localRand)
 			err := producer.Produce(packet)
 			if err != nil {
-				log.Printf("Worker %d: Failed to produce packet: %v", id, err)
+				slog.Warn("Failed to produce packet", "worker_id", id, "error", err)
 			} else {
 				atomic.AddUint64(&eventsProduced, 1)
 			}
@@ -107,7 +122,7 @@ func portScanAttacker(cfg *config.Config, producer *kafka.TelemetryProducer, qui
 		case <-quit:
 			return
 		case <-attackTimer.C:
-			fmt.Println("[CHAOS INJECTED] Initiating Port Scan Anomaly...")
+			slog.Warn("CHAOS INJECTED: Initiating Port Scan Anomaly")
 			attackerIP := "192.168.1.99"
 			targetIP := "10.0.5.55"
 
@@ -149,7 +164,7 @@ func monitorEPS(quit <-chan struct{}) {
 			return
 		case <-ticker.C:
 			current := atomic.SwapUint64(&eventsProduced, 0)
-			fmt.Printf("Throughput: %d EPS\n", current)
+			slog.Info("Performance Metrics", "eps_throughput", current)
 		}
 	}
 }
