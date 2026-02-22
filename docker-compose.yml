@@ -111,7 +111,10 @@ services:
     container_name: kafka_exporter
     ports:
       - "9308:9308"
-    command: ["--kafka.server=kafka-1:9092,kafka-2:9092,kafka-3:9092"]
+    command:
+      - "--kafka.server=kafka-1:9092"
+      - "--kafka.server=kafka-2:9092"
+      - "--kafka.server=kafka-3:9092"
     depends_on:
       - kafka-1
       - kafka-2
