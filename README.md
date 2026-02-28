@@ -2,11 +2,11 @@
 
 ## Executive Summary
 
-I built this end-to-end data pipeline to solve a specific problem in machine learning and system observability: standard load generators produce perfectly clean, predictable data. But in the real world, systems are messy.
+I built this end-to-end data platform to solve a specific problem in distributed systems and observability: standard load generators produce perfectly clean, predictable data. But in the real world, systems are messy.
 
-This project is a high-performance **Network Telemetry Generator and Ingestion Pipeline** designed to simulate real-world VPC Flow Logs and Firewall Logs at a scale of 10,000+ events per second (EPS). More importantly, it acts as a "Chaos Engine"—purposefully injecting realistic network anomalies (latency spikes, dropped packets, data exfiltration) into the data stream.
+This project is a high-performance **Network Telemetry Generator, Ingestion Pipeline, and Real-Time Stateful Processor**. It is designed to simulate custom network traffic logs at a scale of 10,000+ events per second (EPS). More importantly, it acts as a "Chaos Engine"—purposefully injecting realistic network anomalies (latency spikes, dropped packets, data exfiltration) into the data stream.
 
-This serves as the foundational data generation layer for downstream Anomaly Detection and Machine Learning models.
+Rather than just generating data, this platform proves out the entire lifecycle: high-throughput ingestion, compressed object storage for batch processing, and true-streaming stateful anomaly detection using Apache Flink to trigger deduplicated webhooks in real time.
 
 ---
 
@@ -28,34 +28,42 @@ A 3-node Apache Kafka cluster running in KRaft mode (Zookeeper-less). It acts as
 
 A resilient Python microservice that pulls messages from Kafka, strictly validates the schemas using `Pydantic`, and buffers the data. To prevent storage node crashes, it implements dual-trigger batching (by volume or time) and compresses the batches into `json.gz` files before writing to object storage.
 
-### 4. Storage & Observability (MinIO, Prometheus, Grafana)
+### 4. The Real-Time Streaming (Flink)
+
+A native Java 17 Flink application that performs stateful stream processing. Instead of micro-batching, it processes every event as it arrives, utilizing **Watermarks** to handle late-arriving packets and a **1-Minute Sliding Window** to calculate rolling bandwidth averages per IP address to detect active data exfiltration.
+
+### 5. Storage & Observability (MinIO, Prometheus, Grafana)
 
 - **MinIO:** Acts as a local, S3-compatible object storage sink for the compressed batch files.
 - **Prometheus & Grafana:** Monitors the entire pipeline in real-time, scraping metrics via `kafka-exporter` to visualize pipeline throughput (EPS), consumer lag, and cluster health without adding overhead to the brokers.
+
+### 6. Alert Deduplication (Redis, Webhook)
+
+- To prevent "alert fatigue" during sustained network anomalies, the Flink job connects to an external Redis cache. When an anomaly triggers, it sets a 15-minute TTL lock in Redis before firing an asynchronous HTTP POST to a Discord/Slack webhook, ensuring on-call engineers are alerted once per incident, not 50 times a minute.
 
 ---
 
 ## Directory Structure
 
 ```text
-.
+├── docker-compose.yml        # The master orchestrator (Kafka, Flink, Redis, MinIO, Grafana)
+├── producer/                 # Go Telemetry Engine Microservice
+│   ├── cmd/telemetry/        # Application entrypoint
+│   ├── internal/             # Config, Kafka producer wrapper, and Chaos generator
+│   ├── go.mod
+│   └── README.md             # Go-specific documentation
+├── processor/                # Apache Flink Anomaly Detector (Java)
+│   ├── pom.xml               # Maven dependencies and build config
+│   ├── src/main/java/        # Stateful Sliding Window & Redis Sink logic
+│   └── README.md             # Flink stream-processing documentation
 ├── consumer/                 # Python Data Sink Microservice
-│   ├── README.md
 │   ├── requirements.txt
-│   └── src/                  # Pydantic models, batching logic, and MinIO client
-├── docker-compose.yml        # Orchestrates Kafka, MinIO, Prometheus, and Grafana
-├── grafana_dashboard/
-│   └── kafka_dashboard.json  # Pre-built dashboard for EPS and Lag monitoring
-├── images/
-│   └── kafka_dashboard.png
-├── monitoring/
-│   └── prometheus.yml        # Scrape configs for kafka-exporter
-└── producer/                 # Go Telemetry Engine Microservice
-    ├── cmd/telemetry/        # Application entrypoint
-    ├── go.mod
-    ├── go.sum
-    ├── internal/             # Config, Kafka producer wrapper, and Chaos generator
-    └── README.md
+│   ├── src/                  # Pydantic models, batching logic, and MinIO client
+│   └── README.md             # Batching & Storage documentation
+├── monitoring/               # Prometheus configuration
+│   └── prometheus.yml
+└── grafana_dashboard/        # Pre-built dashboards for EPS and Consumer Lag monitoring
+    └── kafka_dashboard.json
 ```
 
 ## The Chaos Modes (Defect Injection)
@@ -69,46 +77,3 @@ The "Port Scan": Simulates a security anomaly by dedicating a worker thread to r
 The "Data Exfiltration": Simulates data theft by generating massive outbound byte payloads (10MB+) compared to tiny inbound ACKs, routed over UDP port 53 (DNS Tunneling).
 
 The "Connection Reset": Simulates reliability failures by injecting high volumes of TCP RST flags and HTTP 5xx errors.
-
----
-
-### Quick Start Guide
-
-**1. Boot the Infrastructure:**
-
-Start the Kafka KRaft cluster, MinIO storage, and the Prometheus/Grafana observability stack:
-
-```bash
-docker-compose up -d
-```
-
-- Grafana: `http://localhost:3000` -> Import the dashboard from grafana_dashboard/. After running producer and consumer it will look like below
-
-  ![Grafana Dashboard](images/kafka_dashboard.png)
-
-- MinIO UI: `http://localhost:9001`
-
-**2. Start the Data Sink (Consumer)**
-
-Open a new terminal, activate a Python environment, and start the sink so it's ready to catch data:
-
-```
-cd consumer
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python -m src.main
-```
-
-**3. Fire the Chaos Cannon (Producer)**
-
-Open another terminal and start the Go generator. You can tune the throughput and chaos probabilities dynamically.
-
-```
-cd producer
-# Run with defaults (~5000 EPS)
-go run ./cmd/telemetry/main.go
-
-# Or stress test it at 15,000 EPS with specific anomaly probabilities
-EPS_TARGET=15000 WORKER_COUNT=20 DATA_EXFIL_PROB=0.05 go run ./cmd/telemetry/main.go
-```

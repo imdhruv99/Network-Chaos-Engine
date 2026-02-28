@@ -3,6 +3,56 @@ networks:
     driver: bridge
 
 services:
+  # =========================================
+  # INFRASTRUCTURE: REDIS CACHE
+  # =========================================
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"] # Ebable data persistence
+    volumes:
+      - redis-data:/data
+    networks:
+      - telemetry_network
+
+  # =========================================
+  # PROCESSOR: FLINK STREAM PROCESSING
+  # =========================================
+  flink-jobmanager:
+    image: flink:1.18.1-scala_2.12-java11
+    container_name: flink-jobmanager
+    ports:
+      - "8081:8081"
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+    networks:
+      - telemetry_network
+
+  flink-taskmanager:
+    image: flink:1.18.1-scala_2.12-java11
+    container_name: flink-taskmanager
+    depends_on:
+      - flink-jobmanager
+      - kafka-1
+      - kafka-2
+      - kafka-3
+    command: taskmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+    networks:
+      - telemetry_network
+
+  # =========================================
+  # INGESTION: KAFKA KRAFT CLUSTER
+  # =========================================
   kafka-1:
     image: confluentinc/cp-kafka:7.7.7
     container_name: kafka-1
@@ -75,6 +125,9 @@ services:
     networks:
       - telemetry_network
 
+  # =========================================
+  # STORAGE: MINIO Object Storage
+  # =========================================
   minio:
     image: quay.io/minio/minio:latest
     container_name: minio
@@ -106,6 +159,9 @@ services:
     networks:
       - telemetry_network
 
+  # =========================================
+  # OBSERVABILITY: KAFKA EXPORTER + PROMETHEUS + GRAFANA
+  # =========================================
   kafka-exporter:
     image: danielqsj/kafka-exporter:latest
     container_name: kafka_exporter
@@ -151,3 +207,4 @@ volumes:
   kafka-2-data:
   kafka-3-data:
   minio-data:
+  redis-data:
