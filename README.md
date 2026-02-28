@@ -1,4 +1,4 @@
-# Net Chaos Engine: High-Throughput Telemetry Pipeline
+# Network Chaos Engine
 
 ## Executive Summary
 
