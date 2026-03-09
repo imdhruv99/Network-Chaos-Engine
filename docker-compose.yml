@@ -11,7 +11,7 @@ services:
     container_name: redis
     ports:
       - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"] # Ebable data persistence
+    command: [ "redis-server", "--appendonly", "yes" ] # Ebable data persistence
     volumes:
       - redis-data:/data
     networks:
@@ -47,6 +47,24 @@ services:
         FLINK_PROPERTIES=
         jobmanager.rpc.address: flink-jobmanager
         taskmanager.numberOfTaskSlots: 4
+    networks:
+      - telemetry_network
+
+  # =========================================
+  # BATCH COMPUTE: APACHE SPARK & JUPYTER
+  # =========================================
+  spark-jupyter:
+    image: jupyter/pyspark-notebook:spark-3.5.0
+    container_name: spark-jupyter
+    ports:
+      - "8888:8888"
+      - "4040:4040" # active only when spark job is running
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - GRANT_SUDO=yes
+    user: root
+    volumes:
+      - ./notebooks:/home/jovyan/work
     networks:
       - telemetry_network
 

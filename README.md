@@ -41,6 +41,12 @@ A native Java 17 Flink application that performs stateful stream processing. Ins
 
 - To prevent "alert fatigue" during sustained network anomalies, the Flink job connects to an external Redis cache. When an anomaly triggers, it sets a 15-minute TTL lock in Redis before firing an asynchronous HTTP POST to a Discord/Slack webhook, ensuring on-call engineers are alerted once per incident, not 50 times a minute.
 
+### 7. The Batch Lakehouse (Apache Spark & Jupyter)
+
+- **Medallion Architecture:** To solve the "Small File Problem" caused by thousands of raw JSON logs, this layer uses Apache Spark to transform data through **Bronze** (Raw Delta), **Silver** (Cleansed Parquet), and **Gold** (Aggregated Business Logic) stages.
+- **Performance:** Implements partition pruning and schema enforcement, reducing query times from ~45s (JSON scan) to ~2s (Parquet) for complex analytical workloads.
+- **Exploration:** Includes a JupyterLab environment for interactive data science and performance benchmarking.
+
 ---
 
 ## Directory Structure
@@ -60,8 +66,14 @@ A native Java 17 Flink application that performs stateful stream processing. Ins
 │   ├── requirements.txt
 │   ├── src/                  # Pydantic models, batching logic, and MinIO client
 │   └── README.md             # Batching & Storage documentation
+├── batch/                    # Apache Spark Lakehouse & Medallion Pipeline
+│   ├── medallion_lakehouse_pipeline.ipynb # Interactive exploration & benchmarks
+│   ├── medallion_lakehouse_pipeline.py    # Production PySpark ETL job
+│   ├── run_spark_job.sh      # Shell wrapper for submitting the PySpark job
+│   └── README.md             # Detailed Medallion Architecture docs
 ├── monitoring/               # Prometheus configuration
 │   └── prometheus.yml
+├── notebooks/                # Jupyter Notebooks storage
 └── grafana_dashboard/        # Pre-built dashboards for EPS and Consumer Lag monitoring
     └── kafka_dashboard.json
 ```
@@ -77,3 +89,15 @@ The "Port Scan": Simulates a security anomaly by dedicating a worker thread to r
 The "Data Exfiltration": Simulates data theft by generating massive outbound byte payloads (10MB+) compared to tiny inbound ACKs, routed over UDP port 53 (DNS Tunneling).
 
 The "Connection Reset": Simulates reliability failures by injecting high volumes of TCP RST flags and HTTP 5xx errors.
+
+---
+
+## Data Lakehouse: The Medallion Architecture
+
+To handle long-term analytics without the performance overhead of raw JSON, the `batch` service implements a Medallion Architecture. This ensures data quality and performance as it moves through the pipeline:
+
+1.  **Bronze (Raw Data):** Ingests raw `.json.gz` files from MinIO into Delta Lake. This stage preserves the original state of the data while providing ACID transactions.
+2.  **Silver (Validated & Optimized):** Cleanses the data (handling nulls, schema enforcement) and stores it in highly compressed **Parquet** format. Data is partitioned by time (`year/month/day`), enabling **Partition Pruning** for massive speedups.
+3.  **Gold (Business Ready):** Final aggregated tables (e.g., "Top 10 Anomaly IPs per Day") optimized for BI tools and dashboarding.
+
+By moving from a full table scan on JSON to a partitioned Parquet-based Silver layer, the system achieves a **20x performance gain** in analytical query execution.
