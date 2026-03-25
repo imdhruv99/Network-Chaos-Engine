@@ -11,8 +11,8 @@ def fetch_historical_training_data():
     entity_df = pd.DataFrame(
         {
             "event_timestamp": [
-                pd.Timestamp.now() - timedelta(minutes=15),
-                pd.Timestamp.now() - timedelta(minutes=30),
+                pd.Timestamp.utcnow() - timedelta(minutes=15),
+                pd.Timestamp.utcnow() - timedelta(minutes=30),
             ],
             "src_ip": ["10.0.0.5", "192.168.1.100"],
             "label_is_anomaly": [1, 0] # 1 = Attack, 0 = Normal
