@@ -1,0 +1,8 @@
+project: network_chaos_engine
+registry: data/registry.db      # Holds metadata about our features
+provider: local                 # the local provider for compute (pandas/arrow)
+offline_store:
+  type: file
+online_store:                   # Online Store is our Redis container
+  type: redis
+  connection_string: "localhost:6379"

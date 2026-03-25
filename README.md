@@ -47,6 +47,11 @@ A native Java 17 Flink application that performs stateful stream processing. Ins
 - **Performance:** Implements partition pruning and schema enforcement, reducing query times from ~45s (JSON scan) to ~2s (Parquet) for complex analytical workloads.
 - **Exploration:** Includes a JupyterLab environment for interactive data science and performance benchmarking.
 
+### 8. The Feature Store (Feast)
+- **Bridging Data & ML:** Acts as the single source of truth for ML features, eliminating **Training-Serving Skew**.
+- **Historical Training (MinIO):** Executes complex Point-in-Time (Time-Travel) joins against the Silver Parquet layer to generate historically accurate Pandas DataFrames for Data Scientists, preventing Data Leakage.
+- **Real-Time Inference (Redis):** A materialization engine syncs the latest feature states into a low-latency Redis cache, allowing backend services to fetch sub-5ms feature vectors for live model scoring.
+
 ---
 
 ## Directory Structure
@@ -71,6 +76,11 @@ A native Java 17 Flink application that performs stateful stream processing. Ins
 │   ├── medallion_lakehouse_pipeline.py    # Production PySpark ETL job
 │   ├── run_spark_job.sh      # Shell wrapper for submitting the PySpark job
 │   └── README.md             # Detailed Medallion Architecture docs
+├── feature_store/            # MLOps Feature Management (Feast)
+│   ├── feature_repo/         # Feature definitions (features.py) and Registry
+│   ├── get_training_data.py  # Data Scientist workflow: Time-travel historical joins
+│   ├── get_online_features.py# Backend Engineer workflow: Sub-millisecond Redis lookups
+│   └── README.md             # Feature Store documentation
 ├── monitoring/               # Prometheus configuration
 │   └── prometheus.yml
 ├── notebooks/                # Jupyter Notebooks storage
